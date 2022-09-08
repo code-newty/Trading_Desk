@@ -1,7 +1,9 @@
+from cgitb import reset
 import logging
 import requests
 from trading_enums import OrderSide, OrderType, OrderTime
 import json
+from date_util import subtract_time_from_todays_date
 #Alpaca Account Object Details: https://alpaca.markets/docs/api-references/trading-api/account/
 
 class AccountAPIActions:
@@ -82,6 +84,11 @@ class AccountAPIActions:
     def getOrder(self, order_id):
         
         response = requests.get(f"{self.end}/orders/{order_id}", headers=self.headers)
+        
+        if response.status_code == 200:
+            return response.json()
+        else: 
+            return None
 
     def getTickerSnapShot(self, symbol):
 
@@ -107,3 +114,14 @@ class AccountAPIActions:
         
         else:
             return None
+        
+    def getBarFromASpecfiedDateRange(self, symbol, years=0, months=0, days=0, hours=0, minutes=0, interval = "1Day"):
+        """
+        Collects the historical bar information from a given stock with n_days set to 0 equaling today.
+        Interval can incorpate Year, Month, Week, Day, Hour, Min up to a year and a day intervals
+        """
+        data = {"timeframe": f"{interval}", "start": f"{subtract_time_from_todays_date()}"}        
+        response = requests.get(f"{self.data_end}/stocks/{symbol}/bars", headers=self.headers,params=data)
+
+        if response.status_code == 200:
+            logging.info(response.json())

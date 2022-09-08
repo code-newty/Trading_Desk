@@ -13,8 +13,6 @@ def main():
     logging.basicConfig(filename="trading_desk.log", level=logging.DEBUG, format="%(asctime)s %(message)s",datefmt="%m/%d/%Y %I:%M:%S %p")
     account = AccountAPIActions(end, key, secret, data_end)
 
-    
-
 if __name__ == "__main__":
     main()
     
