@@ -1,15 +1,16 @@
-from cgitb import reset
+
 import logging
 import requests
-from trading_enums import OrderSide, OrderType, OrderTime
+from alpaca.helpers.trading_enums import OrderSide, OrderType, OrderTime
 import json
 from date_util import subtract_time_from_todays_date
+from alpaca.helpers.alpaca_objects import Account, Asset, Position, Order
 #Alpaca Account Object Details: https://alpaca.markets/docs/api-references/trading-api/account/
 
 class AccountAPIActions:
 
     def __init__(self, server_endpoint, server_key, server_secret, data_endpoint) -> None:
-        self.end = f"https://{server_endpoint}/V2"
+        self.end = f"{server_endpoint}/V2"
         self.key = server_key
         self.secret = server_secret
         
@@ -18,30 +19,72 @@ class AccountAPIActions:
             "APCA-API-SECRET-KEY": f"{self.secret}"
         }
 
-        self.data_end = f"https://{data_endpoint}/v2"
+        self.data_end = f"{data_endpoint}/v2"
 
+    def submitRequest(self, action="GET", urlEnd="", data=[], params=[], market_data=False):
+
+        logging.debug(f"URL sent: {self.end if not market_data else self.data_end}/{urlEnd}")
+        if action == "GET":
+            response = requests.get(f"{self.end if not market_data else self.data_end}/{urlEnd}", headers=self.headers, data=data, params=params)
+        elif action == "DELETE":
+            response = requests.delete(f"{self.end if not market_data else self.data_end}/{urlEnd}", headers=self.headers, data=data, params=params)
+        elif action == "POST":
+           response = requests.post(f"{self.end if not market_data else self.data_end}/{urlEnd}", headers=self.headers, data=data, params=params)
+         
+       
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+        
+
+    #Account Actions
     def getAccountDetails(self):
         
         logging.info(f"{self.end}/account")
-        response = requests.get(f"{self.end}/account", headers=self.headers)
+        response = self.submitRequest(urlEnd="account")
+
+        if response is not None:
+            account_obj = Account(**response)
+        
+        return response
+
+   
+    #Asset Actions
+    def decodeAssetResponse(self, jsonObj) -> Asset:
+        if jsonObj is not None:
+            return Asset(**jsonObj)
+        else:
+            raise(ValueError("Passed in an response of None to AssetDecoder"))
+    
+    def getAllAssets(self):
+        r = self.submitRequest(urlEnd="assests")
+        return self.decodeAssetResponse(r)
+
+    def getAsset(self, ticker=""):
+        r = self.submitRequest(urlEnd=f"assets/{ticker}")
+        return self.decodeAssetResponse(r)
+
+    #Order Actions
+    def getOrders(self):
+
+        response = self.submitRequest(urlEnd="orders")
+
+        return response
+
+    def getOrder(self, order_id):
+        
+        response = self.submitRequest(urlEnd=f"orders/{order_id}")
         
         if response.status_code == 200:
-            
-            jsonResponse = response.json()  
-            return jsonResponse
-        
-        return None
+            return response.json()
+        else: 
+            return None
 
-    def getAccountPositions(self):
-        pass
-
-    def createPosition(self, stock_symbol, order_amount, order_side=OrderSide.BUY, purchase_type=OrderType.MARKET, limit_price=None, order_time=OrderTime.DAY):
+    def makeOrder(self, stock_symbol, order_amount, order_side=OrderSide.BUY, purchase_type=OrderType.MARKET, limit_price=None, order_time=OrderTime.DAY):
         #Additional Parameters can be added
         #Only adding support for market and limit purchase ATM
 
-
-        logging.debug(self.headers)
-        logging.debug(f"{self.end}/orders")
         #Prerequiste body parameters that apply to any order type
         body = {
                     "symbol": stock_symbol,
@@ -63,42 +106,31 @@ class AccountAPIActions:
 
         #Create and send request
         body = json.dumps(body)
-        logging.debug(body)
-        response = requests.post(f"{self.end}/orders", headers=self.headers,data=body)
+        response = self.submitRequest(urlEnd="orders", data=body)
 
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logging.debug(response.text)
-            return None
+        return response
     
-    def getOrders(self):
+    #Position Actions
+    
+    def closePosition(self, ticker="", qty=0, percentage=0):
+        body = {
+            "qty" : qty,
+            "percentage" : percentage
+        }
 
-        response = requests.get(f"{self.end}/orders", headers=self.headers)
+        return self.submitRequest(urlEnd=f"positions/{ticker}", action="DELETE", data=body)
 
-        if response.status_code == 200:
-            return response.json()
-        
-        return None
+    def closeAllPositions(self):
+        return self.submitRequest(urlEnd=f"positions", action="DELETE", data={"cancel_orders": True})
+    
+    def getPositions(self):
+        return self.submitRequest(urlEnd="positions")
 
-    def getOrder(self, order_id):
-        
-        response = requests.get(f"{self.end}/orders/{order_id}", headers=self.headers)
-        
-        if response.status_code == 200:
-            return response.json()
-        else: 
-            return None
-
+    #Historical Actions
     def getTickerSnapShot(self, symbol):
 
-        response = requests.get(f"https://data.alpaca.markets/v2/stocks/{symbol}/snapshot", headers=self.headers)
-
-        if response.status_code == 200:
-            return response.json()
-        
-        else:
-             return None
+        response = self.submitRequest(urlEnd=f"stocks/{symbol}/snapshot", market_data=True)
+        return response
 
     def getMultipleTickerSnapshots(self, symbols):
 
@@ -106,22 +138,17 @@ class AccountAPIActions:
         for symbol in symbols:
             symbolString += f",{symbol}"
 
-        url = f"{self.data_end}/stocks/snapshots?symbols={symbolString[1:]}"
-        response = requests.get(url, headers=self.headers)
+        url = f"stocks/snapshots?symbols={symbolString[1:]}"
+        response = self.submitRequest(urlEnd=url, market_data=True)
 
-        if response.status_code == 200:
-            return response.json()
-        
-        else:
-            return None
+        return response
         
     def getBarFromASpecfiedDateRange(self, symbol, years=0, months=0, days=0, hours=0, minutes=0, interval = "1Day"):
         """
         Collects the historical bar information from a given stock with n_days set to 0 equaling today.
         Interval can incorpate Year, Month, Week, Day, Hour, Min up to a year and a day intervals
         """
-        data = {"timeframe": f"{interval}", "start": f"{subtract_time_from_todays_date()}"}        
-        response = requests.get(f"{self.data_end}/stocks/{symbol}/bars", headers=self.headers,params=data)
-
-        if response.status_code == 200:
-            logging.info(response.json())
+        data = {"timeframe": f"{interval}", "start": f"{subtract_time_from_todays_date()}"}    
+        response = self.submitRequest(urlEnd= "stocks/{symbol}/bars", params=data, market_data=True)    
+        
+        return response
