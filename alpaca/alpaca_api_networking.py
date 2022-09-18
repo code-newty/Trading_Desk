@@ -4,7 +4,6 @@ import requests
 from alpaca.helpers.trading_enums import OrderSide, OrderType, OrderTime
 import json
 from date_util import subtract_time_from_todays_date
-from alpaca.helpers.alpaca_objects import Account, Asset, Position, Order
 #Alpaca Account Object Details: https://alpaca.markets/docs/api-references/trading-api/account/
 
 class AccountAPIActions:
@@ -44,26 +43,18 @@ class AccountAPIActions:
         logging.info(f"{self.end}/account")
         response = self.submitRequest(urlEnd="account")
 
-        if response is not None:
-            account_obj = Account(**response)
+        if response is None:
+            return None
         
         return response
 
-   
-    #Asset Actions
-    def decodeAssetResponse(self, jsonObj) -> Asset:
-        if jsonObj is not None:
-            return Asset(**jsonObj)
-        else:
-            raise(ValueError("Passed in an response of None to AssetDecoder"))
-    
     def getAllAssets(self):
         r = self.submitRequest(urlEnd="assests")
         return self.decodeAssetResponse(r)
 
     def getAsset(self, ticker=""):
         r = self.submitRequest(urlEnd=f"assets/{ticker}")
-        return self.decodeAssetResponse(r)
+        return r
 
     #Order Actions
     def getOrders(self):
@@ -106,7 +97,7 @@ class AccountAPIActions:
 
         #Create and send request
         body = json.dumps(body)
-        response = self.submitRequest(urlEnd="orders", data=body)
+        response = self.submitRequest(urlEnd="orders",action="POST" ,data=body)
 
         return response
     
@@ -134,12 +125,34 @@ class AccountAPIActions:
 
     def getMultipleTickerSnapshots(self, symbols):
 
+        #Change multiple snapshot response to a list of single snapshots rather than a keyword snapshot
+        def clean_snapshot_response(response):
+            cleaned_response = []
+
+            
+            for symbol in response:
+                t = {}
+                
+                t["symbol"] = symbol
+                t["latestTrade"] = response[symbol]["latestTrade"]
+                t["latestQuote"] = response[symbol]["latestQuote"]
+                t["minuteBar"] = response[symbol]["minuteBar"]
+                t["dailyBar"] = response[symbol]["dailyBar"]
+                t["prevDailyBar"] = response[symbol]["prevDailyBar"]
+
+                cleaned_response.append(t)
+
+            return cleaned_response
+
         symbolString = ""
         for symbol in symbols:
             symbolString += f",{symbol}"
 
         url = f"stocks/snapshots?symbols={symbolString[1:]}"
         response = self.submitRequest(urlEnd=url, market_data=True)
+
+        if response is not None:
+            response = clean_snapshot_response(response)
 
         return response
         
